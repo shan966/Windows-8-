@@ -1,0 +1,168 @@
+/// <summary>
+/// Command attached property
+/// </summary>
+public static readonly DependencyProperty CommandProperty =
+    DependencyProperty.RegisterAttached("Command",
+    "Object",  // should be "Object" instead of "ICommand" interface, resolve the null reference exception
+    typeof(AttachedCommand).FullName, new PropertyMetadata(DependencyProperty.UnsetValue));
+
+public static ICommand GetCommand(DependencyObject d)
+{
+    return (ICommand)d.GetValue(CommandProperty);
+}
+public static void SetCommand(DependencyObject d, ICommand value)
+{
+    d.SetValue(CommandProperty, value);
+}
+
+
+
+
+/// <summary>
+/// RoutedEvent property
+/// </summary>
+public static readonly DependencyProperty RoutedEventProperty =
+    DependencyProperty.RegisterAttached("RoutedEvent",
+    "String",
+    typeof(AttachedCommand).FullName,
+    new PropertyMetadata(String.Empty, new PropertyChangedCallback(OnRoutedEventChanged)));
+
+public static String GetRoutedEvent(DependencyObject d)
+{
+    return (String)d.GetValue(RoutedEventProperty);
+}
+public static void SetRoutedEvent(DependencyObject d, String value)
+{
+    d.SetValue(RoutedEventProperty, value);
+}
+
+ private static void OnRoutedEventChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        String routedEvent = (String)e.NewValue;
+ 
+        if (!String.IsNullOrEmpty(routedEvent))
+        {
+            EventHooker eventHooker = new EventHooker();
+            eventHooker.AttachedCommandObject = d;
+            EventInfo eventInfo = GetEventInfo(d.GetType(), routedEvent);
+ 
+            if (eventInfo != null)
+            {
+                eventInfo.AddEventHandler(d, eventHooker.GetEventHandler(eventInfo));
+            }
+ 
+        }
+    }
+}
+
+/// <summary>
+/// Search the EventInfo from the type and its base types
+/// </summary>
+/// <param name="type"></param>
+/// <param name="eventName"></param>
+/// <returns></returns> <returns />
+private static EventInfo GetEventInfo(Type type, string eventName)
+{
+    EventInfo eventInfo = null;
+    eventInfo = type.GetTypeInfo().GetDeclaredEvent(eventName);
+    if (eventInfo == null)
+    {
+        Type baseType = type.GetTypeInfo().BaseType;
+        if (baseType != null)
+            return GetEventInfo(type.GetTypeInfo().BaseType, eventName);
+        else
+            return eventInfo;
+    }
+    return eventInfo;
+}
+
+internal sealed class EventHooker
+{
+    public DependencyObject AttachedCommandObject { get; set; }
+
+    public Delegate GetEventHandler(EventInfo eventInfo)
+    {
+        Delegate del = null;
+        if (eventInfo == null)
+            throw new ArgumentNullException("eventInfo");
+
+        if (eventInfo.EventHandlerType == null)
+            throw new ArgumentNullException("eventInfo.EventHandlerType");
+
+        if (del == null)
+            del = this.GetType().GetTypeInfo().GetDeclaredMethod("OnEventRaised").CreateDelegate(eventInfo.EventHandlerType, this);
+
+        return del;
+    }
+
+    private void OnEventRaised(object sender, object e)  // the second parameter in Windows.UI.Xaml.EventHandler is Object
+    {
+        ICommand command = (ICommand)(sender as DependencyObject).GetValue(AttachedCommand.CommandProperty);
+
+        if (command != null)
+            command.Execute(null);
+    }
+}
+
+public class DelegateCommand : ICommand
+{
+    private readonly Predicate<object> _canExecute;
+    private readonly Action<object> _execute;
+
+
+
+
+    public event Windows.UI.Xaml.EventHandler CanExecuteChanged;
+
+    public DelegateCommand(Action<object> execute)
+        : this(execute, null)
+    {
+    }
+
+
+
+
+    public DelegateCommand(Action<object> execute,
+                   Predicate<object> canExecute)
+    {
+        _execute = execute;
+        _canExecute = canExecute;
+    }
+
+
+
+
+    public bool CanExecute(object parameter)
+    {
+        if (_canExecute == null)
+            return true;
+
+
+
+
+        return _canExecute(parameter);
+    }
+
+
+
+
+    public void Execute(object parameter)
+    {
+        _execute(parameter);
+    }
+
+
+
+
+    public void RaiseCanExecuteChanged()
+    {
+        if (CanExecuteChanged != null)
+        {
+            CanExecuteChanged(this, null);
+        }
+    }
+}
+
+<Button Content="Test Button"
+
+                local:AttachedCommand.RoutedEvent="PointerEntered" local:AttachedCommand.Command="{Binding TestCommand}"/>
